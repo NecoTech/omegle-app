@@ -1,0 +1,39 @@
+# Nginx reverse proxy for the Omegle-style app.
+# Copy to /etc/nginx/sites-available/omegle-app, edit yourdomain.com, then:
+#   sudo ln -s /etc/nginx/sites-available/omegle-app /etc/nginx/sites-enabled/
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# Run `sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com` afterwards —
+# certbot will rewrite this file to add the SSL server block + redirect automatically.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name yourdomain.com www.yourdomain.com;
+
+    # Socket.IO signaling traffic — must come before the catch-all location,
+    # and needs the Upgrade headers for WebSocket to work.
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    # Everything else goes to the Next.js app.
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

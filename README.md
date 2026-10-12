@@ -100,9 +100,13 @@ npm run server
        │          (Video/Audio/Data Channels)               │
 ```
 
+## Production Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for a full walkthrough of deploying to a
+Hostinger (or any Ubuntu) VPS: Nginx reverse proxy, PM2 process management, SSL via
+Let's Encrypt, and TURN server setup.
+
 ## Notes
 
-- For production, use a TURN server for NAT traversal
-- Add HTTPS for production deployment
 - Consider adding chat moderation features
 - Implement user reporting system for safety

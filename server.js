@@ -16,8 +16,36 @@ const io = new Server(server, {
   }
 });
 
+app.get('/health', (req, res) => res.status(200).send('ok'));
+
 let waitingUsers = [];
 const userPairs = new Map();
+
+// Simple per-socket rate limiting to blunt signaling spam/abuse.
+const RATE_LIMITS = {
+  'find-peer': { max: 5, windowMs: 10_000 },
+  'message': { max: 20, windowMs: 10_000 },
+  'typing': { max: 20, windowMs: 10_000 },
+};
+
+function isRateLimited(socket, eventName) {
+  const limit = RATE_LIMITS[eventName];
+  if (!limit) return false;
+
+  const now = Date.now();
+  socket._rateBuckets = socket._rateBuckets || {};
+  const bucket = socket._rateBuckets[eventName] || { count: 0, windowStart: now };
+
+  if (now - bucket.windowStart > limit.windowMs) {
+    bucket.count = 0;
+    bucket.windowStart = now;
+  }
+
+  bucket.count += 1;
+  socket._rateBuckets[eventName] = bucket;
+
+  return bucket.count > limit.max;
+}
 
 function broadcastOnlineCount() {
   io.emit('online-count', io.engine.clientsCount);
@@ -55,6 +83,7 @@ io.on('connection', (socket) => {
   broadcastOnlineCount();
 
   socket.on('find-peer', () => {
+    if (isRateLimited(socket, 'find-peer')) return;
     console.log('User searching for peer:', socket.id);
     matchUsers(socket);
   });
@@ -88,13 +117,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('message', (message) => {
+    if (isRateLimited(socket, 'message')) return;
     const peerId = userPairs.get(socket.id);
-    if (peerId && typeof message === 'string') {
+    if (peerId && typeof message === 'string' && message.trim()) {
       io.to(peerId).emit('message', message.slice(0, 1000));
     }
   });
 
   socket.on('typing', (isTyping) => {
+    if (isRateLimited(socket, 'typing')) return;
     const peerId = userPairs.get(socket.id);
     if (peerId) {
       io.to(peerId).emit('typing', Boolean(isTyping));
@@ -129,6 +160,18 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`Signaling server running on port ${PORT}`);
+const HOST = process.env.HOST || '127.0.0.1';
+server.listen(PORT, HOST, () => {
+  console.log(`Signaling server running on ${HOST}:${PORT}`);
 });
+
+function shutdown() {
+  console.log('Shutting down signaling server...');
+  io.close(() => {
+    server.close(() => process.exit(0));
+  });
+  setTimeout(() => process.exit(0), 5000);
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
